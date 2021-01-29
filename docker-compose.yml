@@ -1,0 +1,106 @@
+version: "3"
+
+services:
+  db:
+    image: postgres:9.6-alpine
+    hostname: db
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=t10db
+    volumes:
+      - "db-data:/var/lib/postgresql/data"
+    networks:
+      - web
+
+  app:
+    build: .
+    hostname: app
+    command: >
+      sh -c "python manage.py runserver 0.0.0.0:8000"
+    env_file:
+      - ./.envs/.env
+      - ./.envs/.database
+    volumes:
+      - .:/code
+    ports:
+      - "8000:8000"
+    links:
+      - rabbit
+      - redis
+    depends_on:
+      - db
+      - mail
+    networks:
+      - web
+
+  mail:
+    image: mailhog/mailhog
+    hostname: mail
+    expose:
+      - 1025
+      - 8025
+    ports:
+      - 1025:1025
+      - 8025:8025
+    networks:
+      - web
+
+  redis:
+    image: redis:6-alpine
+    ports:
+      - 6379:6379
+    networks:
+      - web
+
+  rabbit:
+    image: rabbitmq:3.8-management-alpine
+    hostname: rabbit
+    env_file:
+      - ./.envs/.broker
+    ports:
+      - "5682:5672"
+      - "15682:15672"
+    networks:
+      - web
+
+  worker:
+    build: .
+    restart: "no"
+    command: celery -A application worker -l info
+    env_file:
+      - ./.envs/.database
+    volumes:
+      - .:/code
+    links:
+      - redis
+      - rabbit
+    depends_on:
+      - rabbit
+    networks:
+      - web
+
+  flower:
+    image: mher/flower
+    command: ["flower", "--broker=amqp://admin:admin@rabbit", "--port=5555"]
+    environment:
+      - CELERY_BROKER=amqp://admin:admin@rabbit:5672//
+      - CELERY_BACKEND=redis://redis:6379/0
+    ports:
+      - 5555:5555
+    links:
+      - worker
+      - redis
+    depends_on:
+      - rabbit
+    networks:
+      - web
+
+volumes:
+  db-data:
+  static_volume:
+
+networks:
+  web:
+    driver: bridge

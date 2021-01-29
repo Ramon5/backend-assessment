@@ -1,0 +1,7 @@
+.vscode
+.idea
+*.pyc
+__pycache__/
+.covarage
+*.sqlite3
+.pytest_cache
